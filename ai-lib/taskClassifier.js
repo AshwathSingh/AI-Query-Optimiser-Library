@@ -1,9 +1,10 @@
 // Task Classification Library
-// This module handles determining the appropriate task type and model for queries
+// This module handles determining the appropriate task type and model for queries.
+// It analyzes the user's query, classifies the task, and selects the best model.
 
 import { TEXT_LENGTH_THRESHOLDS, defaultModelManager } from "./models.js";
 
-// Task type definitions
+// Task type definitions (each with keywords, description, and default settings)
 export const TASK_TYPES = {
   LLM_Summary: {
     name: "Summary",
@@ -81,8 +82,13 @@ export const TASK_TYPES = {
   },
 };
 
-// Text complexity analyzer
+// Text complexity analyzer: determines the complexity of a query
 export class TextComplexityAnalyzer {
+  /**
+   * Analyze a text string and return complexity info.
+   * @param {string} text - The text to analyze.
+   * @returns {object} - Complexity, reason, and stats.
+   */
   static analyze(text) {
     if (!text || typeof text !== "string") {
       return {
@@ -97,22 +103,18 @@ export class TextComplexityAnalyzer {
         },
       };
     }
-
     const length = text.length;
     const wordCount = text.split(/\s+/).length;
     const sentenceCount = text.split(/[.!?]+/).length - 1;
     const paragraphCount = text.split(/\n\s*\n/).length;
-
-    // Calculate complexity score
+    // Calculate a simple complexity score
     const complexityScore =
       length / 100 + // Length factor
       wordCount / 20 + // Word density factor
       sentenceCount * 2 + // Sentence complexity factor
       paragraphCount * 3; // Structural complexity factor
-
     // Determine complexity level
     let complexity, reason;
-
     if (length <= TEXT_LENGTH_THRESHOLDS.SHORT) {
       complexity = "SHORT";
       reason = `Short text (${length} chars, ${wordCount} words)`;
@@ -126,7 +128,6 @@ export class TextComplexityAnalyzer {
       complexity = "VERY_LONG";
       reason = `Very long text (${length} chars, ${wordCount} words, ${paragraphCount} paragraphs)`;
     }
-
     // Check for analytical keywords that might warrant model upgrade
     const analyticalKeywords = [
       "analyze",
@@ -142,16 +143,13 @@ export class TextComplexityAnalyzer {
       "review",
       "assess",
     ];
-
     const hasAnalyticalContent = analyticalKeywords.some((keyword) =>
       text.toLowerCase().includes(keyword)
     );
-
     if (hasAnalyticalContent && complexity === "SHORT") {
       complexity = "MEDIUM";
       reason += " - Upgraded due to analytical keywords";
     }
-
     return {
       complexity,
       reason,
@@ -166,13 +164,20 @@ export class TextComplexityAnalyzer {
   }
 }
 
-// Task classifier
+// Task classifier: determines the task type and model for a query
 export class TaskClassifier {
+  /**
+   * Construct a new TaskClassifier instance.
+   * @param {object} modelManager - The model manager for model selection.
+   */
   constructor(modelManager = defaultModelManager) {
     this.modelManager = modelManager;
   }
-
-  // Classify a query and determine task type and model
+  /**
+   * Classify a query and determine task type and model.
+   * @param {string} queryText - The user's query.
+   * @returns {Promise<object>} - Classification result.
+   */
   async classifyQuery(queryText) {
     if (!queryText) {
       return {
@@ -182,14 +187,11 @@ export class TaskClassifier {
         reason: "Empty query",
       };
     }
-
     // Analyze text complexity
     const complexityAnalysis = TextComplexityAnalyzer.analyze(queryText);
     console.log("Text complexity analysis:", complexityAnalysis);
-
     // Determine task type by keywords
     let task = this.determineTaskType(queryText);
-
     // If no keyword matches, use GroqCloud llama3-8b-8192 to classify
     if (task === "LLM_Default") {
       const prompt =
@@ -228,10 +230,8 @@ export class TaskClassifier {
         task = "LLM_Default";
       }
     }
-
     // Get appropriate model
     const model = this.getModelForTask(task, complexityAnalysis.complexity);
-
     return {
       task,
       model,
@@ -240,43 +240,71 @@ export class TaskClassifier {
       stats: complexityAnalysis.stats,
     };
   }
-
-  // Determine task type based on keywords
+  /**
+   * Determine task type based on keywords in the query.
+   * @param {string} queryText - The user's query.
+   * @returns {string} - Task type identifier.
+   */
   determineTaskType(queryText) {
     const query = queryText.toLowerCase().trim();
-
     // Check for task-specific keywords
     for (const [taskType, taskConfig] of Object.entries(TASK_TYPES)) {
       if (taskType === "LLM_Default") continue; // Skip default, check others first
-
       for (const keyword of taskConfig.keywords) {
         if (query.includes(keyword)) {
           return taskType;
         }
       }
     }
-
     // If no specific keywords found, use AI classification
     return "LLM_Default";
   }
-
-  // Get appropriate model for task and complexity
+  /**
+   * Get the appropriate model for a task and complexity.
+   * @param {string} task - Task type.
+   * @param {string} complexity - Complexity level.
+   * @returns {string} - Model ID.
+   */
   getModelForTask(task, complexity) {
-    // Always use llama3-8b-8192 from GroqCloud for classification
-    return "llama3-8b-8192";
+    // Get base model for complexity
+    let model = this.modelManager.getModelForComplexity(complexity);
+    // Override for complex analysis tasks
+    if (
+      task === "LLM_Analysis" &&
+      (complexity === "LONG" || complexity === "VERY_LONG")
+    ) {
+      // Use better models for complex analysis
+      const betterModels = [
+        "mixtral-8x7b-32768",
+        "llama3-70b-8192",
+        "claude-3-sonnet",
+      ];
+      for (const betterModel of betterModels) {
+        if (
+          this.modelManager.modelSupportsCapability(betterModel, "analysis")
+        ) {
+          model = betterModel;
+          break;
+        }
+      }
+    }
+    return model;
   }
-
-  // Get task configuration
+  /**
+   * Get the config for a task type.
+   */
   getTaskConfig(taskType) {
     return TASK_TYPES[taskType] || TASK_TYPES.LLM_Default;
   }
-
-  // Get all available task types
+  /**
+   * Get all available task types.
+   */
   getAvailableTasks() {
     return Object.keys(TASK_TYPES);
   }
-
-  // Set model manager
+  /**
+   * Set the model manager (for dynamic model config changes).
+   */
   setModelManager(modelManager) {
     this.modelManager = modelManager;
   }

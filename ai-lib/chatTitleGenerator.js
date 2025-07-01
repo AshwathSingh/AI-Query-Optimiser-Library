@@ -1,18 +1,27 @@
 // Chat Title Generator
-// This module handles intelligent chat title generation using the AI library
+// This module handles intelligent chat title generation using the AI library.
+// It can generate, update, and clean chat titles based on conversation content.
 
-// Chat title generator class
+// Chat title generator class: manages all chat title logic
 export class ChatTitleGenerator {
+  /**
+   * Construct a new ChatTitleGenerator instance.
+   * @param {object|null} aiOrchestrator - Optional orchestrator for LLM calls.
+   */
   constructor(aiOrchestrator = null) {
     this.aiOrchestrator = aiOrchestrator;
   }
 
-  // Set AI orchestrator
+  /**
+   * Set the AI orchestrator (for dependency injection or circular avoidance).
+   */
   setAIOrchestrator(aiOrchestrator) {
     this.aiOrchestrator = aiOrchestrator;
   }
 
-  // Get AI orchestrator (lazy load to avoid circular dependency)
+  /**
+   * Get the AI orchestrator, loading it if needed (avoids circular import).
+   */
   async getAIOrchestrator() {
     if (!this.aiOrchestrator) {
       const { getDefaultAIOrchestrator } = await import("./index.js");
@@ -21,16 +30,18 @@ export class ChatTitleGenerator {
     return this.aiOrchestrator;
   }
 
-  // Generate a chat title using the AI library
+  /**
+   * Generate a chat title using the AI library and the first message.
+   * @param {string} firstMessage - The first user message.
+   * @returns {Promise<string>} - The generated chat title.
+   */
   async generateChatTitle(firstMessage) {
     if (!firstMessage || firstMessage.length < 10) {
       return "New Chat";
     }
-
     try {
       // Get AI orchestrator
       const aiOrchestrator = await this.getAIOrchestrator();
-
       // Use the AI orchestrator to generate a title
       const titlePrompt = `Generate a short, descriptive title (3-6 words) for a chat conversation that starts with this message: "${firstMessage.substring(
         0,
@@ -38,15 +49,11 @@ export class ChatTitleGenerator {
       )}${firstMessage.length > 200 ? "..." : ""}"
 
 Title:`;
-
       const result = await aiOrchestrator.processQuery(titlePrompt);
-
       // Debug: Log the result structure
       console.log("Chat title generation result:", result);
-
       // Extract title from the response - handle different response formats
       let title = null;
-
       if (result.success) {
         // Try different response formats
         if (result.response) {
@@ -74,7 +81,6 @@ Title:`;
       } else {
         console.warn("Result not successful:", result.error || result.details);
       }
-
       if (title) {
         const cleanTitle = this.cleanTitle(title.trim());
         console.log("Final clean title:", cleanTitle);
@@ -89,26 +95,31 @@ Title:`;
     }
   }
 
-  // Generate a fallback title using simple text processing
+  /**
+   * Generate a fallback title using simple text processing.
+   * @param {string} message - The first user message.
+   * @returns {string} - Fallback chat title.
+   */
   generateFallbackTitle(message) {
     if (!message || message.length < 10) {
       return "New Chat";
     }
-
     // Extract first sentence or first 50 characters
     const firstSentence = message.split(/[.!?]/)[0].trim();
     const title =
       firstSentence.length > 50
         ? firstSentence.substring(0, 50) + "..."
         : firstSentence;
-
     return title || "New Chat";
   }
 
-  // Clean up the generated title
+  /**
+   * Clean up the generated title (remove quotes, trim, limit length).
+   * @param {string} title - The raw title string.
+   * @returns {string} - Cleaned title.
+   */
   cleanTitle(title) {
     if (!title) return "New Chat";
-
     return title
       .replace(/^["']|["']$/g, "") // Remove surrounding quotes
       .replace(/\s+/g, " ") // Normalize spaces
@@ -116,34 +127,28 @@ Title:`;
       .substring(0, 50); // Limit to 50 characters
   }
 
-  // Generate title based on chat content analysis
+  /**
+   * Generate a title based on the content of the chat (first few messages).
+   * @param {Array} messages - Chat messages (with .user fields).
+   * @returns {Promise<string>} - Generated or fallback title.
+   */
   async generateTitleFromChatContent(messages) {
     if (!messages || messages.length === 0) {
       return "New Chat";
     }
-
     try {
       // Get AI orchestrator
       const aiOrchestrator = await this.getAIOrchestrator();
-
       // Combine first few messages for context
       const contextMessages = messages.slice(0, 3);
       const contextText = contextMessages
         .map((msg) => msg.user)
         .join(" ")
         .substring(0, 300);
-
-      const titlePrompt = `Based on this chat conversation, generate a short, descriptive title (3-6 words):
-
-${contextText}
-
-Title:`;
-
+      const titlePrompt = `Based on this chat conversation, generate a short, descriptive title (3-6 words):\n\n${contextText}\n\nTitle:`;
       const result = await aiOrchestrator.processQuery(titlePrompt);
-
       // Extract title from the response - handle different response formats
       let title = null;
-
       if (result.success) {
         // Try different response formats
         if (result.response) {
@@ -158,7 +163,6 @@ Title:`;
           title = result.content;
         }
       }
-
       if (title) {
         return this.cleanTitle(title.trim());
       } else {
@@ -170,12 +174,16 @@ Title:`;
     }
   }
 
-  // Update chat title dynamically based on conversation
+  /**
+   * Dynamically update the chat title as the conversation grows.
+   * @param {Array} messages - Chat messages.
+   * @param {string} currentTitle - Current chat title.
+   * @returns {Promise<string>} - Updated or current title.
+   */
   async updateChatTitleDynamically(messages, currentTitle) {
     if (!messages || messages.length < 3) {
       return currentTitle;
     }
-
     // Only update if we have significantly more messages
     if (messages.length % 5 === 0) {
       // Update every 5 messages
@@ -187,12 +195,11 @@ Title:`;
         return currentTitle;
       }
     }
-
     return currentTitle;
   }
 }
 
-// Export default instance
+// Export default instance (singleton)
 let _defaultChatTitleGenerator = null;
 
 export function getDefaultChatTitleGenerator() {

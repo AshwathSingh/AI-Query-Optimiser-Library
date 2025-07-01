@@ -1,5 +1,6 @@
 // AI Library - Main Interface
 // This module provides a unified plug-and-play interface for AI functionality
+// It acts as the main orchestrator, connecting all AI components (model selection, task classification, prompt management, context management, LLM client, and chat title generation).
 
 import {
   ModelManager,
@@ -34,36 +35,52 @@ import {
   getDefaultChatTitleGenerator,
 } from "./chatTitleGenerator.js";
 
-// Main AI orchestrator class
+// Main AI orchestrator class: central entry point for all AI operations
 export class AIOrchestrator {
+  /**
+   * Construct a new AIOrchestrator instance, wiring up all subcomponents.
+   * @param {object} options - Optional custom components for advanced use.
+   */
   constructor(options = {}) {
+    // Model manager handles model selection and config
     this.modelManager = options.modelManager || getDefaultModelManager();
+    // Task classifier determines the type of user query
     this.taskClassifier = options.taskClassifier || getDefaultTaskClassifier();
+    // Prompt manager generates system prompts and manages prompt templates
     this.promptManager = options.promptManager || getDefaultPromptManager();
+    // Context manager manages chat history and context window
     this.contextManager = options.contextManager || getDefaultContextManager();
+    // LLM client handles API calls to GroqCloud or other providers
     this.llmClient = options.llmClient || getDefaultLLMClient();
+    // Chat title generator creates smart chat titles
     this.chatTitleGenerator =
       options.chatTitleGenerator || getDefaultChatTitleGenerator();
 
-    // Link components together
+    // Link model manager to other components for consistent model selection
     this.taskClassifier.setModelManager(this.modelManager);
     this.contextManager.setModelManager(this.modelManager);
 
-    // Set AI orchestrator in chat title generator to avoid circular dependency
+    // Avoid circular dependency by setting orchestrator in chat title generator
     if (this.chatTitleGenerator && !this.chatTitleGenerator.aiOrchestrator) {
       this.chatTitleGenerator.setAIOrchestrator(this);
     }
   }
 
-  // Main method to process a query
+  /**
+   * Main method to process a user query with optional chat history.
+   * Handles classification, prompt building, context selection, and LLM call.
+   * @param {string} queryText - The user's query.
+   * @param {object|null} chatHistory - The chat history (see contextManager for format).
+   * @returns {Promise<object>} - The LLM response and metadata.
+   */
   async processQuery(queryText, chatHistory = null) {
     console.log("AI Orchestrator processing query:", queryText);
 
-    // Step 1: Use local task classification only
+    // Step 1: Classify the query to determine task type and model
     const classification = await this.taskClassifier.classifyQuery(queryText);
     console.log("Final query classification:", classification);
 
-    // Step 2: Get prompt and parameters
+    // Step 2: Get prompt and LLM parameters based on classification
     const maxTokens = this.promptManager.getTokenLimit(
       classification.task,
       classification.complexity
@@ -79,28 +96,31 @@ export class AIOrchestrator {
       classification.complexity
     );
 
-    // Step 3: Process context
+    // Step 3: Process chat history into context messages
+    // (contextManager expects chatHistory to be an object with a .messages array)
     const contextMessages = this.contextManager.processChatHistory(chatHistory);
+    // Select the most relevant context messages for the model
     const modelConfig = this.modelManager.getModelConfig(classification.model);
     const selectedContext = this.contextManager.selectContextMessages(
       contextMessages,
       classification.model,
       modelConfig.contextConfig.maxContextMessages
     );
+    // Optimize context to fit within token limits
     const optimizedContext = this.contextManager.optimizeContext(
       selectedContext,
       classification.model,
       maxTokens
     );
 
-    // Step 4: Build messages array
+    // Step 4: Build the messages array for the LLM API
     const messages = this.contextManager.buildMessagesArray(
       systemPrompt,
       optimizedContext,
       queryText
     );
 
-    // Step 5: Call LLM
+    // Step 5: Call the LLM with all parameters
     const result = await this.llmClient.callLLM({
       model: classification.model,
       messages,
@@ -112,7 +132,7 @@ export class AIOrchestrator {
       contextMessages: optimizedContext,
     });
 
-    // Add additional metadata
+    // Attach detailed metadata for debugging and analysis
     result.metadata = {
       classification,
       contextStats: this.contextManager.getContextStats(
@@ -123,19 +143,28 @@ export class AIOrchestrator {
       promptInfo: {
         maxTokens,
         temperature,
-        systemPrompt: systemPrompt,
+        systemPrompt: systemPrompt, // Full prompt for transparency
       },
     };
 
     return result;
   }
 
-  // Generate chat title
+  /**
+   * Generate a chat title for a new conversation.
+   * @param {string} firstMessage - The first user message.
+   * @returns {Promise<string>} - The generated chat title.
+   */
   async generateChatTitle(firstMessage) {
     return await this.chatTitleGenerator.generateChatTitle(firstMessage);
   }
 
-  // Update chat title dynamically
+  /**
+   * Dynamically update the chat title as the conversation evolves.
+   * @param {Array} messages - The chat messages.
+   * @param {string} currentTitle - The current chat title.
+   * @returns {Promise<string>} - The updated chat title.
+   */
   async updateChatTitleDynamically(messages, currentTitle) {
     return await this.chatTitleGenerator.updateChatTitleDynamically(
       messages,
@@ -143,7 +172,10 @@ export class AIOrchestrator {
     );
   }
 
-  // Configure the orchestrator
+  /**
+   * Configure the orchestrator with custom strategies or components.
+   * @param {object} options - Custom configuration options.
+   */
   configure(options) {
     if (options.modelStrategy) {
       this.modelManager.setStrategy(options.modelStrategy);
@@ -176,7 +208,10 @@ export class AIOrchestrator {
     }
   }
 
-  // Get current configuration
+  /**
+   * Get the current orchestrator configuration (for debugging/UI).
+   * @returns {object} - Current configuration details.
+   */
   getConfiguration() {
     return {
       modelStrategy: this.modelManager.getStrategy(),
@@ -186,33 +221,59 @@ export class AIOrchestrator {
     };
   }
 
-  // Add custom model
+  /**
+   * Add a custom model to the registry.
+   * @param {string} modelId - The model identifier.
+   * @param {object} config - The model configuration.
+   */
   addCustomModel(modelId, config) {
     MODEL_REGISTRY[modelId] = config;
   }
 
-  // Add custom task type
+  /**
+   * Add a custom task type.
+   * @param {string} taskType - The task type identifier.
+   * @param {object} config - The task configuration.
+   */
   addCustomTask(taskType, config) {
     TASK_TYPES[taskType] = config;
   }
 
-  // Add custom system prompt
+  /**
+   * Add a custom system prompt for a task type.
+   * @param {string} taskType - The task type identifier.
+   * @param {function} promptFunction - The prompt generator function.
+   */
   addCustomPrompt(taskType, promptFunction) {
     this.promptManager.addSystemPrompt(taskType, promptFunction);
   }
 
-  // Test model availability
+  /**
+   * Test if a model is available (calls the LLM with a test prompt).
+   * @param {string} modelId - The model identifier.
+   * @returns {Promise<boolean>} - True if the model responds successfully.
+   */
   async testModel(modelId) {
     return await this.llmClient.testModel(modelId);
   }
 
-  // Get cost estimate
+  /**
+   * Estimate the cost of a given model usage.
+   * @param {string} modelId - The model identifier.
+   * @param {number} inputTokens - Number of input tokens.
+   * @param {number} outputTokens - Number of output tokens (optional).
+   * @returns {number} - Estimated cost in USD.
+   */
   estimateCost(modelId, inputTokens, outputTokens = 0) {
     return this.modelManager.estimateCost(modelId, inputTokens, outputTokens);
   }
 }
 
-// Factory function to create AI orchestrator with different configurations
+/**
+ * Factory function to create an AI orchestrator with custom configuration.
+ * @param {object} config - Configuration options for the orchestrator.
+ * @returns {AIOrchestrator} - The configured orchestrator instance.
+ */
 export function createAIOrchestrator(config = {}) {
   const options = {
     modelStrategy: config.modelStrategy || "BALANCED",

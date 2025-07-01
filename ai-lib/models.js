@@ -1,7 +1,8 @@
 // AI Models Configuration Library
 // This module provides a plug-and-play interface for different AI models
+// It defines available models, their capabilities, and strategies for model selection.
 
-// Text length thresholds for model selection
+// Text length thresholds for model selection (used for complexity analysis)
 export const TEXT_LENGTH_THRESHOLDS = {
   SHORT: 100, // 0-100 characters: use smaller models
   MEDIUM: 500, // 101-500 characters: use medium models
@@ -9,7 +10,7 @@ export const TEXT_LENGTH_THRESHOLDS = {
   VERY_LONG: 2000, // 1000+ characters: use best models
 };
 
-// Model registry - easily add new models here
+// Model registry - defines all available models and their properties
 export const MODEL_REGISTRY = {
   // Groq Cloud Models
   "llama3-8b-8192": {
@@ -111,6 +112,7 @@ export const MODEL_REGISTRY = {
 };
 
 // Default model mappings for different complexity levels
+// Used to select a model based on the complexity of the user query
 export const DEFAULT_MODELS = {
   SHORT: "llama3-8b-8192",
   MEDIUM: "llama3-70b-8192",
@@ -118,7 +120,7 @@ export const DEFAULT_MODELS = {
   VERY_LONG: "llama3-70b-8192",
 };
 
-// Model selection strategies
+// Model selection strategies for different optimization goals
 export const MODEL_SELECTION_STRATEGIES = {
   // Cost-optimized: prioritize cheaper models
   COST_OPTIMIZED: {
@@ -150,8 +152,12 @@ export const MODEL_SELECTION_STRATEGIES = {
   },
 };
 
-// Model utility functions
+// ModelManager class: handles model selection and config lookup
 export class ModelManager {
+  /**
+   * Construct a new ModelManager with a given strategy.
+   * @param {string} strategy - Model selection strategy (default: BALANCED).
+   */
   constructor(strategy = "BALANCED") {
     this.strategy = strategy;
     this.models =
@@ -159,35 +165,61 @@ export class ModelManager {
       MODEL_SELECTION_STRATEGIES.BALANCED;
   }
 
-  // Get model for a given complexity
+  /**
+   * Get the model for a given complexity level.
+   * @param {string} complexity - Complexity level (SHORT, MEDIUM, etc).
+   * @returns {string} - Model ID.
+   */
   getModelForComplexity(complexity) {
     return this.models[complexity] || this.models.SHORT;
   }
 
-  // Get model configuration
+  /**
+   * Get the configuration for a model by ID.
+   * @param {string} modelId - Model ID.
+   * @returns {object} - Model config object.
+   */
   getModelConfig(modelId) {
     return MODEL_REGISTRY[modelId] || MODEL_REGISTRY["llama3-8b-8192"];
   }
 
-  // Check if model supports a specific capability
+  /**
+   * Check if a model supports a specific capability (e.g., 'analysis').
+   * @param {string} modelId - Model ID.
+   * @param {string} capability - Capability string.
+   * @returns {boolean}
+   */
   modelSupportsCapability(modelId, capability) {
     const config = this.getModelConfig(modelId);
     return config.capabilities.includes(capability);
   }
 
-  // Get all available models
+  /**
+   * Get all available model IDs.
+   * @returns {Array<string>} - List of model IDs.
+   */
   getAvailableModels() {
     return Object.keys(MODEL_REGISTRY);
   }
 
-  // Get models by provider
+  /**
+   * Get all models for a given provider.
+   * @param {string} provider - Provider name.
+   * @returns {Array<object>} - List of model configs.
+   */
   getModelsByProvider(provider) {
     return Object.entries(MODEL_REGISTRY)
       .filter(([_, config]) => config.provider === provider)
       .map(([id, config]) => ({ id, ...config }));
   }
 
-  // Estimate cost for a model
+  /**
+   * Estimate the cost of a model call.
+   * @param {string} modelId - Model ID.
+   * @param {number} inputTokens - Number of input tokens.
+   * @param {number} outputTokens - Number of output tokens (optional).
+   * @returns {number} - Estimated cost in USD.
+   */
   estimateCost(modelId, inputTokens, outputTokens = 0) {
     const config = this.getModelConfig(modelId);
     const inputCost = (inputTokens / 1000) * config.costPer1kTokens;
@@ -195,7 +227,10 @@ export class ModelManager {
     return inputCost + outputCost;
   }
 
-  // Change selection strategy
+  /**
+   * Change the model selection strategy.
+   * @param {string} strategy - New strategy name.
+   */
   setStrategy(strategy) {
     if (MODEL_SELECTION_STRATEGIES[strategy]) {
       this.strategy = strategy;
@@ -203,7 +238,10 @@ export class ModelManager {
     }
   }
 
-  // Get current strategy
+  /**
+   * Get the current model selection strategy.
+   * @returns {string} - Strategy name.
+   */
   getStrategy() {
     return this.strategy;
   }
